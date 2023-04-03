@@ -1,20 +1,64 @@
 package main
 
 import (
+	"flag"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
+	"os"
 
 	"golang.org/x/net/html"
 )
 
 var links []string
+var urlFlag string
 var visited map[string]bool = map[string]bool{}
 
+func init() {
+	flag.StringVar(&urlFlag, "url", "https://github.com/michelbernardods?tab=repositories", "url to start")
+}
+
 func main() {
-	visitLinks("https://github.com/michelbernardods?tab=repositories")
+	done := make(chan bool)
+	go visitLinks(urlFlag)
+
+	<-done
 
 	fmt.Println(len(links), "links")
+}
+
+func saveLinks() {
+	if _, err := os.Stat("data"); os.IsNotExist(err) {
+		err = os.Mkdir("data", 0755)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	fileLinks, err := os.Create("data/links.csv")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer fileLinks.Close()
+
+	for _, link := range links {
+		_, err := fileLinks.WriteString(link + "\n") // adiciona quebra de linha após cada link
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+	}
+}
+
+func containsString(slice []string, str string) bool {
+	for _, s := range slice {
+		if s == str {
+			return true
+		}
+	}
+	return false
 }
 
 func extractLinks(n *html.Node) {
@@ -24,13 +68,16 @@ func extractLinks(n *html.Node) {
 				continue
 			}
 
-			link, err := url.Parse(attr.Val)
-			if err != nil || link.Scheme == "" {
+			link, _ := url.Parse(attr.Val)
+			invalidSchemes := []string{"", "mailto", "javascript", "about"}
+
+			if containsString(invalidSchemes, link.Scheme) {
 				continue
 			}
 
 			links = append(links, link.String())
-			visitLinks(link.String())
+			saveLinks()
+			go visitLinks(link.String())
 
 		}
 
@@ -51,18 +98,18 @@ func visitLinks(url string) {
 
 	res, err := http.Get(url)
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
 	}
 
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
-		panic(fmt.Sprintf("status not is 200: %d", res.StatusCode))
+		fmt.Printf("status not is 200: %d", res.StatusCode)
 	}
 
 	doc, err := html.Parse(res.Body)
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
 	}
 
 	extractLinks(doc)
