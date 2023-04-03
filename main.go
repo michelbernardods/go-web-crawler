@@ -9,9 +9,45 @@ import (
 )
 
 var links []string
+var visited map[string]bool = map[string]bool{}
 
 func main() {
-	url := "https://github.com/michelbernardods?tab=repositories"
+	visitLinks("https://github.com/michelbernardods?tab=repositories")
+
+	fmt.Println(len(links), "links")
+}
+
+func extractLinks(n *html.Node) {
+	if n.Type == html.ElementNode && n.Data == "a" {
+		for _, attr := range n.Attr {
+			if attr.Key != "href" {
+				continue
+			}
+
+			link, err := url.Parse(attr.Val)
+			if err != nil || link.Scheme == "" {
+				continue
+			}
+
+			links = append(links, link.String())
+			visitLinks(link.String())
+
+		}
+
+	}
+
+	for nav := n.FirstChild; nav != nil; nav = nav.NextSibling {
+		extractLinks(nav)
+	}
+}
+
+func visitLinks(url string) {
+	if ok := visited[url]; ok {
+		return
+	}
+	visited[url] = true
+
+	fmt.Println(url)
 
 	res, err := http.Get(url)
 	if err != nil {
@@ -30,28 +66,4 @@ func main() {
 	}
 
 	extractLinks(doc)
-	fmt.Println(len(links), "links")
-}
-
-func extractLinks(n *html.Node) {
-	if n.Type == html.ElementNode && n.Data == "a" {
-		for _, attr := range n.Attr {
-			if attr.Key != "href" {
-				continue
-			}
-
-			link, err := url.Parse(attr.Val)
-			if err != nil || link.Scheme == "" {
-				continue
-			}
-
-			links = append(links, link.String())
-			fmt.Println(link)
-		}
-
-	}
-
-	for nav := n.FirstChild; nav != nil; nav = nav.NextSibling {
-		extractLinks(nav)
-	}
 }
